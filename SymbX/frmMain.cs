@@ -17,6 +17,10 @@ namespace SymbX
         private const int SPRING_BORDER = 48;
         private ListView _activeListView;
         private Notifier _notifier;
+        private ContextMenuStrip _cmsLeft;
+        private ContextMenuStrip _cmsRightTree;
+        private ContextMenuStrip _cmsRightList;
+
         public frmMain()
         {
             InitializeComponent();
@@ -164,8 +168,107 @@ namespace SymbX
             mnuHelpAbout.Click += (s, e) => showHelp();
             msMain.Visible = false;
             #endregion
+
+            initializeContextMenus();
         }
-        
+
+        private void initializeContextMenus()
+        {
+            _cmsLeft = new ContextMenuStrip();
+            var mnuLeftOpen = new ToolStripMenuItem("&Explorer");
+            //mnuLeftOpen.ShortcutKeys = Keys.Control | Keys.E;
+            var mnuLeftCopy = new ToolStripMenuItem("&Copy");
+            mnuLeftCopy.ShortcutKeys = Keys.Control | Keys.C;
+            mnuLeftOpen.Click += (s, e) => openCurrentSelection(tvwSrc, lvwSrc);
+            mnuLeftCopy.Click += (s, e) => copyCurrentSelection(tvwSrc, lvwSrc);
+            _cmsLeft.Items.AddRange(new ToolStripItem[] 
+            { 
+                mnuLeftOpen, 
+                new ToolStripSeparator(),
+                mnuLeftCopy 
+            });
+            _cmsLeft.Opening += (s, e) =>
+            {
+                var canOperate = hasSelectionOrNode(tvwSrc, lvwSrc);
+                mnuLeftOpen.Enabled = canOperate;
+                mnuLeftCopy.Enabled = canOperate;
+            };
+
+            _cmsRightTree = new ContextMenuStrip();
+            var mnuRightTreeOpen = new ToolStripMenuItem("&Explorer");
+            //mnuRightTreeOpen.ShortcutKeys = Keys.Control | Keys.E;
+            var mnuRightTreeCopy = new ToolStripMenuItem("&Copy");
+            mnuRightTreeCopy.ShortcutKeys = Keys.Control | Keys.C;
+            var mnuRightTreePaste = new ToolStripMenuItem("&Paste");
+            mnuRightTreePaste.ShortcutKeys = Keys.Control | Keys.V;
+            mnuRightTreeOpen.Click += (s, e) => openCurrentSelection(tvwDst, lvwDst);
+            mnuRightTreeCopy.Click += (s, e) => copyCurrentSelection(tvwDst, lvwDst);
+            mnuRightTreePaste.Click += (s, e) => pasteFromClipboard();
+            _cmsRightTree.Items.AddRange(new ToolStripItem[] 
+            { 
+                mnuRightTreeOpen,
+                new ToolStripSeparator(),
+                mnuRightTreeCopy, 
+                mnuRightTreePaste 
+            });
+            _cmsRightTree.Opening += (s, e) =>
+            {
+                var canOperate = hasSelectionOrNode(tvwDst, lvwDst);
+                mnuRightTreeOpen.Enabled = canOperate;
+                mnuRightTreeCopy.Enabled = canOperate;
+                mnuRightTreePaste.Enabled = canPasteToCurrentNode();
+            };
+
+            _cmsRightList = new ContextMenuStrip();
+            var mnuRightListOpen = new ToolStripMenuItem("&Explorer");
+            //mnuRightListOpen.ShortcutKeys = Keys.Control | Keys.E;
+            var mnuRightListCopy = new ToolStripMenuItem("&Copy");
+            mnuRightListCopy.ShortcutKeys = Keys.Control | Keys.C;
+            var mnuRightListPaste = new ToolStripMenuItem("&Paste");
+            mnuRightListPaste.ShortcutKeys = Keys.Control | Keys.V;
+            var mnuRightListDelete = new ToolStripMenuItem("&Delete");
+            //mnuRightListDelete.ShortcutKeys = Keys.Delete;
+            var mnuRightListRename = new ToolStripMenuItem("&Rename");
+            mnuRightListRename.ShortcutKeys = Keys.F2;
+            mnuRightListOpen.Click += (s, e) => openCurrentSelection(tvwDst, lvwDst);
+            mnuRightListCopy.Click += (s, e) => copyCurrentSelection(tvwDst, lvwDst);
+            mnuRightListPaste.Click += (s, e) => pasteFromClipboard();
+            mnuRightListDelete.Click += (s, e) => deleteSelectItems();
+            mnuRightListRename.Click += (s, e) =>
+            {
+                if (lvwDst.SelectedItems.Count > 0)
+                    lvwDst.SelectedItems[0].BeginEdit();
+                else
+                    SystemSounds.Beep.Play();
+            };
+            _cmsRightList.Items.AddRange(new ToolStripItem[]
+            {
+                mnuRightListOpen,
+                new ToolStripSeparator(),
+                mnuRightListCopy,
+                mnuRightListPaste,
+                mnuRightListDelete,
+                new ToolStripSeparator(),
+                mnuRightListRename
+            });
+            _cmsRightList.Opening += (s, e) =>
+            {
+                var hasAnySelection = hasSelectionOrNode(tvwDst, lvwDst);
+                var hasListSelection = lvwDst.SelectedItems.Count > 0;
+                var allSymbolicLink = hasListSelection && areAllSelectedItemsSymbolicLink();
+                mnuRightListOpen.Enabled = hasAnySelection;
+                mnuRightListCopy.Enabled = hasAnySelection;
+                mnuRightListPaste.Enabled = canPasteToCurrentNode();
+                mnuRightListDelete.Enabled = allSymbolicLink;
+                mnuRightListRename.Enabled = hasListSelection && allSymbolicLink;
+            };
+
+            tvwSrc.ContextMenuStrip = _cmsLeft;
+            lvwSrc.ContextMenuStrip = _cmsLeft;
+            tvwDst.ContextMenuStrip = _cmsRightTree;
+            lvwDst.ContextMenuStrip = _cmsRightList;
+        }
+
         #region EVENTHANDLER
 
         private void lvwDstBeforeLabelEditEventHandler(object sender, LabelEditEventArgs e)
@@ -593,23 +696,23 @@ namespace SymbX
 
         private void pasteFromClipboard()
         {
-            if (tvwDst.SelectedNode != null && tvwDst.SelectedNode.Parent != null)
+            if (tvwDst.SelectedNode == null || tvwDst.SelectedNode.Parent == null)
             {
-                var currPath = tvwDst.SelectedNode.Tag as string;
-                if (!string.IsNullOrEmpty(currPath))
-                {
-                    bool needReload = pasteFromClipboard(lvwDst, currPath, mnuShowLog.Checked);
-                    // 刷新界面
-                    if (needReload)
-                    {
-                        loadTreeNodes(tvwDst.SelectedNode, true);
-                        //new frmToast(this, "Create symbolic link file success", 3000);
-                        _notifier.ShowSucess("Create symbolic link success");
-                    }
-                }
-            }
-            else
                 Debug.Print("当前位置无法粘贴创建软连接");
+                return;
+            }
+
+            var currPath = tvwDst.SelectedNode.Tag as string;
+            if (string.IsNullOrEmpty(currPath))
+                return;
+
+            bool needReload = pasteFromClipboard(lvwDst, currPath, mnuShowLog.Checked);
+            if (needReload)
+            {
+                Clipboard.Clear();
+                loadTreeNodes(tvwDst.SelectedNode, true);
+                _notifier.ShowSucess("Create symbolic link success");
+            }
         }
 
         private bool pasteFromClipboard(ListView lvw, string path, bool showLog)
@@ -662,6 +765,73 @@ namespace SymbX
 
             ret = items.Count > 0 && ExplorerHelper.TryMakeLinkByCore(items, showLog);
             return ret;
+        }
+
+        private bool hasSelectionOrNode(TreeView tvw, ListView lvw)
+        {
+            return (lvw.Focused && lvw.SelectedItems.Count > 0)
+                || (!lvw.Focused && tvw.SelectedNode != null && tvw.SelectedNode.Tag != null);
+        }
+
+        private bool canPasteToCurrentNode()
+        {
+            if (tvwDst.SelectedNode == null || tvwDst.SelectedNode.Parent == null)
+                return false;
+
+            if (Clipboard.ContainsText())
+            {
+                var text = Clipboard.GetText();
+                var paths = text.Split(new[] { "\r\n", "\n" }, StringSplitOptions.RemoveEmptyEntries);
+                foreach (var p in paths)
+                    if (File.Exists(p) || Directory.Exists(p))
+                        return true;
+            }
+            if (Clipboard.ContainsFileDropList())
+            {
+                foreach (string p in Clipboard.GetFileDropList())
+                    if (File.Exists(p) || Directory.Exists(p))
+                        return true;
+            }
+            return false;
+        }
+
+        private bool areAllSelectedItemsSymbolicLink()
+        {
+            if (lvwDst.SelectedItems.Count == 0) return false;
+            foreach (ListViewItem item in lvwDst.SelectedItems)
+                if (!ExplorerHelper.IsSymbolicLink(item.Tag.ToString(), out _))
+                    return false;
+            return true;
+        }
+
+        private void openCurrentSelection(TreeView tvw, ListView lvw)
+        {
+            string path = null;
+            if (lvw.Focused && lvw.SelectedItems.Count > 0)
+                path = lvw.SelectedItems[0].Tag?.ToString();
+            else if (tvw.SelectedNode != null)
+                path = tvw.SelectedNode.Tag?.ToString();
+
+            if (!string.IsNullOrEmpty(path) && (File.Exists(path) || Directory.Exists(path)))
+                Process.Start("explorer.exe", $"/select, {path}");
+            else
+                SystemSounds.Beep.Play();
+        }
+
+        private void copyCurrentSelection(TreeView tvw, ListView lvw)
+        {
+            if (lvw.Focused && lvw.SelectedItems.Count > 0)
+            {
+                copySelectedItems(lvw);
+                return;
+            }
+            if (tvw.SelectedNode != null && tvw.SelectedNode.Tag != null)
+            {
+                Clipboard.SetText(tvw.SelectedNode.Tag.ToString());
+                Debug.Print("已复制节点路径到剪切板");
+                return;
+            }
+            SystemSounds.Beep.Play();
         }
 
         private void showHelp() =>
